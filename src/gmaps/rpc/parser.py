@@ -348,13 +348,23 @@ def _search_place_data_entries(raw_data: list[Any]) -> list[tuple[list[Any], lis
 
     legacy_entries: list[tuple[list[Any], list[Any]]] = []
     if isinstance(legacy_results, list):
-        for entry in legacy_results[SEARCH_FIRST_BUSINESS_INDEX:]:
-            if (
+        for index, entry in enumerate(legacy_results):
+            if not (
                 isinstance(entry, list)
                 and len(entry) > SEARCH_ENTRY_PLACE_DATA_INDEX
                 and isinstance(entry[SEARCH_ENTRY_PLACE_DATA_INDEX], list)
             ):
-                legacy_entries.append((entry, entry[SEARCH_ENTRY_PLACE_DATA_INDEX]))
+                continue
+            place_data = entry[SEARCH_ENTRY_PLACE_DATA_INDEX]
+            # data[0][1][0] is normally the metadata entry, but when a query
+            # names one place exactly Google answers with that single place in
+            # this slot (live capture 2026-10-21, "Café Sperl"). Keep it
+            # only when it carries a business name.
+            if index < SEARCH_FIRST_BUSINESS_INDEX and not (
+                len(place_data) > F_NAME and isinstance(place_data[F_NAME], str)
+            ):
+                continue
+            legacy_entries.append((entry, place_data))
     if legacy_entries:
         return legacy_entries
 
