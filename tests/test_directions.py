@@ -26,6 +26,7 @@ from gmaps._directions import DirectionsAPI
 from gmaps.exceptions import ParseError
 from gmaps.rpc.directions import (
     build_directions_path,
+    encode_polyline,
     encode_waypoint,
     parse_directions_response,
 )
@@ -68,17 +69,18 @@ def test_bad_waypoints(bad: Any):
 def test_mode_and_token_count():
     path = build_directions_path(["A", "B"], mode="walk")
     assert path.startswith("/maps/preview/directions?authuser=0&hl=en&gl=us&pb=")
-    assert _pb(path).endswith("!6m3!20m2!1e2!2e3")
-    assert _pb(build_directions_path(["A", "B"], mode="drive")).endswith("!6m3!20m2!1e0!2e3")
+    assert _pb(path).endswith("!6m4!14b1!20m2!1e2!2e3")
+    assert _pb(build_directions_path(["A", "B"], mode="drive")).endswith("!6m4!14b1!20m2!1e0!2e3")
+    assert _pb(build_directions_path(["A", "B"], geometry=False)).endswith("!6m3!20m2!1e0!2e3")
 
 
 def test_departure_and_arrival_are_local_wall_clock_as_utc():
     eight_thirty = dt.datetime(2026, 10, 22, 8, 30)
     expected = 1792657800  # calendar.timegm(2026-10-22 08:30) - not the Vienna epoch
     depart = _pb(build_directions_path(["A", "B"], departure_time=eight_thirty))
-    assert depart.endswith(f"!6m6!20m2!1e0!2e3!19m2!2e2!3j{expected}")
+    assert depart.endswith(f"!6m7!14b1!20m2!1e0!2e3!19m2!2e2!3j{expected}")
     arrive = _pb(build_directions_path(["A", "B"], arrival_time=eight_thirty))
-    assert arrive.endswith(f"!6m7!20m2!1e0!2e3!19m3!1e1!2e2!3j{expected}")
+    assert arrive.endswith(f"!6m8!14b1!20m2!1e0!2e3!19m3!1e1!2e2!3j{expected}")
     aware = eight_thirty.replace(tzinfo=dt.timezone(dt.timedelta(hours=2)))
     assert _pb(build_directions_path(["A", "B"], departure_time=aware)) == depart
 
@@ -228,3 +230,70 @@ async def test_api_route():
     assert transport.paths[0].startswith("/maps/preview/directions?authuser=0&hl=en&gl=at&pb=")
     assert result.waypoints[0].query == "48.1869434,16.3132568"
     assert result.status == "OK"
+
+
+# ── steps and geometry (the captures requested it with !14b1) ──
+
+
+def test_drive_steps_segments_and_path():
+    result = parse_directions_response(_load("drive_depart_0830"), mode="drive")
+    route = result.routes[0]
+    leg = route.legs[0]
+    assert leg.segments[0].instruction == "Get on A4"
+    first = route.steps[0]
+    assert first.instruction == "Head southeast"
+    assert first.maneuver is None  # no markup on this step: not guessed
+    assert first.start_latitude == pytest.approx(48.1238966, abs=1e-6)
+    ramp = next(s for s in route.steps if s.maneuver == "ON_RAMP")
+    assert ramp.instruction == "Slight right onto the ramp to Wien/Linz/Graz"
+    merge = next(s for s in route.steps if s.maneuver == "MERGE")
+    assert merge.instruction == "Merge onto A4" and "Toll road" in merge.notices
+    roundabout = next(s for s in route.steps if s.maneuver == "ROUNDABOUT_ENTER_AND_EXIT")
+    assert roundabout.instruction == "At the roundabout, take the 2nd exit onto Marc-Aurel-Straße"
+    # Step distances add up to the leg; the path runs stop to stop.
+    assert (
+        abs(sum(s.distance_meters for s in route.steps) - leg.distance_meters)
+        <= 0.02 * leg.distance_meters
+    )
+    assert len(route.path) == 1077
+    assert route.path[0] == pytest.approx((48.1238966, 16.5592155))
+    assert route.path[-1] == pytest.approx((48.2091592, 16.3732236))
+    # Each alternative has its own path.
+    assert len(result.routes[1].path) == 1309
+
+
+def test_walk_turn_maneuvers_come_from_google_markup():
+    route = parse_directions_response(_load("text_walk"), mode="walk").routes[0]
+    maneuvers = [s.maneuver for s in route.steps]
+    assert "TURN_RIGHT" in maneuvers and "TURN_LEFT" in maneuvers
+    assert "TURN" not in maneuvers  # refined whenever the side is given
+    turn = next(s for s in route.steps if s.maneuver == "TURN_RIGHT")
+    assert turn.instruction == "Turn right onto Wiedner Gürtel/B221"
+
+
+def test_multi_stop_path_and_steps_per_leg():
+    route = parse_directions_response(_load("3_stop_drive"), mode="drive").routes[0]
+    assert len(route.legs) == 2 and all(leg.segments for leg in route.legs)
+    assert len(route.steps) == sum(len(seg.steps) for leg in route.legs for seg in leg.segments)
+    assert "TURN_SLIGHT_LEFT" in [s.maneuver for s in route.steps]
+    assert len(route.path) == 610
+
+
+def test_old_responses_without_geometry_still_parse():
+    raw = _load("text_walk")
+    raw[0][7] = None  # as answered before the request asked for geometry (!14b1)
+    route = parse_directions_response(raw, mode="walk").routes[0]
+    assert route.path == [] and route.steps
+
+
+def test_to_dict_leaves_the_path_out_unless_asked():
+    result = parse_directions_response(_load("text_walk"), mode="walk")
+    assert "path" not in result.to_dict()["routes"][0]
+    assert len(result.to_dict(include_path=True)["routes"][0]["path"]) == 68
+    assert result.to_dict()["routes"][0]["legs"][0]["segments"][0]["steps"][0]["instruction"]
+
+
+def test_encode_polyline_matches_googles_reference_example():
+    # The worked example in Google's "Encoded Polyline Algorithm Format" documentation.
+    points = [(38.5, -120.2), (40.7, -120.95), (43.252, -126.453)]
+    assert encode_polyline(points) == "_p~iF~ps|U_ulLnnqC_mqNvxq`@"
