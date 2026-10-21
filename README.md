@@ -107,6 +107,17 @@ async def main():
 asyncio.run(main())
 ```
 
+### Travel time between places
+
+```bash
+gmaps route "Wien Hauptbahnhof" "Belvedere Palace, Vienna" --mode walk
+gmaps route "Vienna International Airport" "Stephansplatz, Vienna" --mode drive --depart 2026-10-29T08:30
+```
+
+Stops can be text, a `ChIJ…` place ID or `lat,lng`; add more stops to get each leg.
+Driving with `--depart`/`--arrive` includes predicted traffic and a typical range.
+From Python: `await client.directions.route([...], mode="walk")`.
+
 ## Use it with AI assistants
 
 `gmaps-scraper` ships with a built-in server (MCP) so AI assistants like Claude can
