@@ -15,7 +15,9 @@ from typing import Any
 
 import httpx
 
+from ._hosts import refuse_other_hosts
 from .exceptions import (
+    HostNotAllowedError,
     NetworkError,
     RateLimitError,
     TimeoutError,
@@ -131,6 +133,7 @@ class HTTPTransport:
                 follow_redirects=True,
                 http2=False,
                 cookies=self._cookie_jar,
+                event_hooks={"request": [refuse_other_hosts]},
                 **transport_kwargs,
             )
             # Randomize initial UA position
@@ -259,7 +262,7 @@ class HTTPTransport:
                 response.raise_for_status()
                 return _decode(response.text, response_type=response_type)
 
-            except RateLimitError:
+            except (RateLimitError, HostNotAllowedError):
                 raise
 
             except httpx.TimeoutException as e:
@@ -373,7 +376,7 @@ class HTTPTransport:
                 response.raise_for_status()
                 return _decode(response.text, response_type=response_type)
 
-            except RateLimitError:
+            except (RateLimitError, HostNotAllowedError):
                 raise
 
             except httpx.TimeoutException as e:
