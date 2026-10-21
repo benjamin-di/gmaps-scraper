@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from .decoder import decode_response, strip_anti_xssi
 from .encoder import build_request_params, encode_rpc_request
+from .ids import hex_id_to_place_id, place_id_to_hex_id
 from .parser import (
     ParsedPlace,
     parse_place_details_response,
@@ -41,6 +42,8 @@ __all__ = [
     "build_request_params",
     "decode_response",
     "strip_anti_xssi",
+    "place_id_to_hex_id",
+    "hex_id_to_place_id",
     "encode_pb",
     "decode_pb",
     "build_search_pb",
