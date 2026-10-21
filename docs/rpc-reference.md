@@ -127,6 +127,35 @@ Photo references from search/place responses can be resolved to CDN URLs:
 https://lh5.googleusercontent.com/p/{photo_reference}=...
 ```
 
+### Directions
+
+**Endpoint:** `GET https://www.google.com/maps/preview/directions?authuser=0&hl=en&gl=us&pb=...`
+
+No key, login or cookies. Minimal `pb` (documented by
+[ai-ecoverse/skills `gmaps`](https://github.com/ai-ecoverse/skills/tree/main/skills/gmaps),
+re-verified 2026-10-21): one waypoint per stop, then the options.
+
+| Token | Meaning |
+|-------|---------|
+| `!1m2!1s{text}!6e0` | waypoint by free text |
+| `!1m3!1s{name}!2s{0x…:0x…}!6e0` | waypoint by feature ID (name may be empty; a `ChIJ…` place ID converts to it, `rpc/ids.py`) |
+| `!1m4!3m2!3d{lat}!4d{lng}!6e2` | waypoint by coordinates |
+| `!6m{n}!20m2!1e{mode}!2e3` | mode 0 drive, 1 bicycle, 2 walk, 3 transit; `!2e3` is required |
+| `!19m2!2e2!3j{t}` / `!19m3!1e1!2e2!3j{t}` | depart at / arrive by `t` (inside `6m`) |
+
+`t` is the local wall-clock time written as if UTC. Response paths (after `)]}'`):
+
+| Path | Value |
+|------|-------|
+| `[0][0][i][0][0]` | waypoint `[text, hex_id, [_, _, lat, lng], …]`, `[18]` = place ID; coordinates null = unresolved |
+| `[0][0][i][0][1]` | `[[name, address], name, address, street, locality]` |
+| `[0][1]` | routes (empty: no route) |
+| `route[0][1]`, `[0][2]`, `[0][3]` | "via" summary, `[meters, text]`, `[seconds, text]` (typical) |
+| `route[0][10]` | driving traffic: `[0]` in traffic, `[3]` no traffic, `[4]` `[min, max, text]`, `[7]` arrival / `[8]` departure `[epoch, tz, text, utc_offset]` |
+| `route[1][k][0][2]`, `[0][3]` | leg k distance and duration |
+
+Parsed by `rpc/directions.py`; used by `client.directions.route()` and `gmaps route`.
+
 ## Discovery / Development
 
 ### Capturing New Endpoints
