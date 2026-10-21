@@ -142,6 +142,7 @@ re-verified 2026-10-21): one waypoint per stop, then the options.
 | `!1m4!3m2!3d{lat}!4d{lng}!6e2` | waypoint by coordinates |
 | `!6m{n}!20m2!1e{mode}!2e3` | mode 0 drive, 1 bicycle, 2 walk, 3 transit; `!2e3` is required |
 | `!19m2!2e2!3j{t}` / `!19m3!1e1!2e2!3j{t}` | depart at / arrive by `t` (inside `6m`) |
+| `!14b1` | also return each route's geometry (inside `6m`; about 7 KB per 20 km) |
 
 `t` is the local wall-clock time written as if UTC. Response paths (after `)]}'`):
 
@@ -153,6 +154,9 @@ re-verified 2026-10-21): one waypoint per stop, then the options.
 | `route[0][1]`, `[0][2]`, `[0][3]` | "via" summary, `[meters, text]`, `[seconds, text]` (typical) |
 | `route[0][10]` | driving traffic: `[0]` in traffic, `[3]` no traffic, `[4]` `[min, max, text]`, `[7]` arrival / `[8]` departure `[epoch, tz, text, utc_offset]` |
 | `route[1][k][0][2]`, `[0][3]` | leg k distance and duration |
+| `route[1][k][1][g]` | segment g of leg k: `[0]` summary (`[14]` instruction pieces), `[1][n][0]` its turns |
+| turn | `[1]` markup `<step maneuver='ON_RAMP'>…` (or empty), `[2]`/`[3]` distance/duration, `[7][1][1]` start `[_, _, lat, lng]`, `[9]` notices ("Toll road"), `[14]` instruction pieces `[[kind, [text]], …]` |
+| `[0][7][r]` | route r's path: `[0]` latitudes, `[1]` longitudes, x 1e7, first absolute then deltas |
 
 Parsed by `rpc/directions.py`; used by `client.directions.route()` and `gmaps route`.
 
