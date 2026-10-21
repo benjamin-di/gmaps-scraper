@@ -29,13 +29,25 @@ def test_conversion_both_ways(place_id: str, hex_id: str) -> None:
 
 @pytest.mark.parametrize(
     "value",
-    ["", "GhIJQWDl0CIeQUARxks3icF8U8A", "ChIJ", "ChIJ!!!", "EiQxIE1haW4gU3Q", None],
+    [
+        "",
+        "GhIJQWDl0CIeQUARxks3icF8U8A",
+        "ChIJ",
+        "ChIJ!!!",
+        "EiQxIE1haW4gU3Q",
+        None,
+        "ChIJwVp-8psHbUcRuN43n5iK72Y=&evil=1",  # trailing junk base64 decoding would ignore
+        "ChIJwVp-8p!&%#sHbUcRuN43n5iK72Y",  # characters outside the alphabet in the middle
+        "ChIJwVp-8psHbUcRuN43n5iK72Y\n",
+    ],
 )
 def test_non_feature_place_ids_convert_to_none(value: Any) -> None:
     assert place_id_to_hex_id(value) is None
 
 
-@pytest.mark.parametrize("value", ["", "0x1", "1234:5678", "0xzz:0x1", None])
+@pytest.mark.parametrize(
+    "value", ["", "0x1", "1234:5678", "0xzz:0x1", None, "0x1:0x2\n", "0x1:0x2&a=b"]
+)
 def test_bad_hex_ids_convert_to_none(value: Any) -> None:
     assert hex_id_to_place_id(value) is None
 
