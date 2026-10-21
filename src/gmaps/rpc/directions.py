@@ -12,6 +12,7 @@ Request (``pb``), one waypoint message per stop, then the options::
     !1m3!1s<name>!2s<0x…:0x…>!6e0     waypoint by feature ID (name may be empty)
     !1m4!3m2!3d<lat>!4d<lng>!6e2      waypoint by coordinates
     !6m<n>!20m2!1e<mode>!2e3          mode: 0 drive, 1 bicycle, 2 walk, 3 transit
+          !14b1                       also send each route's geometry (j[0][7])
           !19m2!2e2!3j<t>             depart at t
           !19m3!1e1!2e2!3j<t>         arrive by t
 
@@ -35,12 +36,22 @@ Response (after the ``)]}'`` line), positional::
         [7]  [epoch, tz, text, utc_offset_s]   arrival (when departing at t)
         [8]  [epoch, tz, text, utc_offset_s]   departure (when arriving by t)
     route[1][k][0]       leg k (between stop k and k+1): [_, _, [m, text], [s, text]]
+    route[1][k][1][g]    segment g of leg k, the grouped lines Maps lists ("Get on A4"):
+        [0]              [_, _, [m, text], [s, text], …, [14] instruction pieces]
+        [1][n][0]        step n, one turn: [_, xml, [m, text], [s, text], …,
+                          [7][1][1] [_, _, lat, lng] where the step starts,
+                          [9] notices ([_, "Toll road", …]), [14] instruction pieces]
+                          xml is "" or "<step maneuver='ON_RAMP' …>…</step>"
+    instruction pieces   [[kind, [text, …]], …]; the text joined is the instruction
+    j[0][7][r][0], [1]   route r's path: latitudes and longitudes x 1e7, the first
+                          absolute and the rest deltas (requested with !14b1)
 """
 
 from __future__ import annotations
 
 import calendar
 import datetime as dt
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
 from urllib.parse import quote
@@ -76,6 +87,19 @@ TRAFFIC_FREE_FLOW_INDEX = 3
 TRAFFIC_RANGE_INDEX = 4
 TRAFFIC_ARRIVAL_INDEX = 7
 TRAFFIC_DEPARTURE_INDEX = 8
+GEOMETRY_INDEX = 7
+GEOMETRY_LATS_INDEX = 0
+GEOMETRY_LNGS_INDEX = 1
+LEG_SEGMENTS_INDEX = 1
+SEGMENT_SUMMARY_INDEX = 0
+SEGMENT_STEPS_INDEX = 1
+STEP_RECORD_INDEX = 0
+STEP_XML_INDEX = 1
+STEP_DISTANCE_INDEX = 2
+STEP_DURATION_INDEX = 3
+STEP_VIEW_INDEX = 7
+STEP_NOTICES_INDEX = 9
+STEP_INSTRUCTION_INDEX = 14
 LEG_SUMMARY_INDEX = 0
 LEG_DISTANCE_INDEX = 2
 LEG_DURATION_INDEX = 3
@@ -124,15 +148,18 @@ def build_directions_path(
     arrival_time: dt.datetime | None = None,
     language: str = "en",
     region: str = "us",
+    geometry: bool = True,
 ) -> str:
-    """Path for ``/maps/preview/directions``."""
+    """Path for ``/maps/preview/directions``. ``geometry`` adds each route's path
+    (about 7 KB for a 20 km drive)."""
     if len(waypoints) < 2:
         raise ValueError("need at least an origin and a destination")
     if mode not in TRAVEL_MODES:
         raise ValueError(f"mode must be one of {sorted(TRAVEL_MODES)}, not {mode!r}")
     if departure_time is not None and arrival_time is not None:
         raise ValueError("give departure_time or arrival_time, not both")
-    options = [f"!20m2!1e{TRAVEL_MODES[mode]}!2e3"]
+    options = ["!14b1"] if geometry else []
+    options.append(f"!20m2!1e{TRAVEL_MODES[mode]}!2e3")
     if departure_time is not None:
         options.append(f"!19m2!2e2!3j{_wall_clock(departure_time)}")
     elif arrival_time is not None:
@@ -170,11 +197,43 @@ class TimePoint:
 
 
 @dataclass
+class RouteStep:
+    """One turn of the route, as Maps lists it under "Details"."""
+
+    instruction: str = ""
+    # Google's maneuver code when the step carries one (ON_RAMP, OFF_RAMP, MERGE,
+    # ROUNDABOUT_…, TURN_LEFT, TURN_SLIGHT_RIGHT, …); None otherwise, never
+    # inferred from the instruction text.
+    maneuver: str | None = None
+    distance_meters: int | None = None
+    distance_text: str = ""
+    duration_seconds: int | None = None
+    duration_text: str = ""
+    start_latitude: float | None = None
+    start_longitude: float | None = None
+    notices: list[str] = field(default_factory=list)
+
+
+@dataclass
+class RouteSegment:
+    """A grouped line of the directions list ("Get on A4 from Rennweg")
+    and the turns it contains."""
+
+    instruction: str = ""
+    distance_meters: int | None = None
+    distance_text: str = ""
+    duration_seconds: int | None = None
+    duration_text: str = ""
+    steps: list[RouteStep] = field(default_factory=list)
+
+
+@dataclass
 class RouteLeg:
     distance_meters: int | None = None
     distance_text: str = ""
     duration_seconds: int | None = None
     duration_text: str = ""
+    segments: list[RouteSegment] = field(default_factory=list)
 
 
 @dataclass
@@ -199,6 +258,13 @@ class Route:
     departure: TimePoint | None = None
     arrival: TimePoint | None = None
     legs: list[RouteLeg] = field(default_factory=list)
+    # (latitude, longitude) points along the route; empty unless requested.
+    path: list[tuple[float, float]] = field(default_factory=list)
+
+    @property
+    def steps(self) -> list[RouteStep]:
+        """Every turn of the route, all legs and segments in order."""
+        return [step for leg in self.legs for segment in leg.segments for step in segment.steps]
 
 
 @dataclass
@@ -217,9 +283,12 @@ class Directions:
     unresolved: list[int] = field(default_factory=list)
     raw: Any = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, include_path: bool = False) -> dict[str, Any]:
         data = asdict(self)
         data.pop("raw")
+        if not include_path:
+            for route in data["routes"]:
+                route.pop("path")
         for waypoint, source in zip(data["waypoints"], self.waypoints, strict=True):
             waypoint["resolved"] = source.resolved
         return data
@@ -251,6 +320,104 @@ def _time_point(value: Any) -> TimePoint | None:
         text=_str(_at(value, 2)),
         utc_offset_seconds=_int(_at(value, 3)),
     )
+
+
+_MANEUVER = re.compile(r"maneuver='([A-Z_]+)'")
+_TURN = re.compile(r"<turn side='(LEFT|RIGHT)'(?: type='(SLIGHT|SHARP)')?")
+
+
+def _maneuver(xml: str) -> str | None:
+    """Google's maneuver code from the step markup; a TURN with an explicit
+    ``<turn side type>`` becomes the Routes API name (TURN_SLIGHT_RIGHT, …)."""
+    found = _MANEUVER.search(xml)
+    if not found:
+        return None
+    code = found.group(1)
+    turn = _TURN.search(xml)
+    if code == "TURN" and turn:
+        side, kind = turn.groups()
+        code = f"TURN_{kind}_{side}" if kind else f"TURN_{side}"
+    return code
+
+
+def _instruction(pieces: Any) -> str:
+    """Join instruction pieces ``[[kind, [text, …]], …]`` into one line."""
+    if not isinstance(pieces, list):
+        return ""
+    text = "".join(_str(_at(piece, 1, 0)) for piece in pieces)
+    return " ".join(text.split())
+
+
+def _parse_step(raw_step: Any) -> RouteStep:
+    record = _at(raw_step, STEP_RECORD_INDEX)
+    start = _at(record, STEP_VIEW_INDEX, 1, 1)
+    lat, lng = _at(start, 2), _at(start, 3)
+    notices = [
+        _str(_at(notice, 1))
+        for notice in (_at(record, STEP_NOTICES_INDEX) or [])
+        if _str(_at(notice, 1))
+    ]
+    return RouteStep(
+        instruction=_instruction(_at(record, STEP_INSTRUCTION_INDEX)),
+        maneuver=_maneuver(_str(_at(record, STEP_XML_INDEX))),
+        distance_meters=_int(_at(record, STEP_DISTANCE_INDEX, 0)),
+        distance_text=_str(_at(record, STEP_DISTANCE_INDEX, 1)),
+        duration_seconds=_int(_at(record, STEP_DURATION_INDEX, 0)),
+        duration_text=_str(_at(record, STEP_DURATION_INDEX, 1)),
+        start_latitude=float(lat) if isinstance(lat, (int, float)) else None,
+        start_longitude=float(lng) if isinstance(lng, (int, float)) else None,
+        notices=notices,
+    )
+
+
+def _parse_segment(raw_segment: Any) -> RouteSegment:
+    summary = _at(raw_segment, SEGMENT_SUMMARY_INDEX)
+    steps_raw = _at(raw_segment, SEGMENT_STEPS_INDEX)
+    segment = RouteSegment(
+        instruction=_instruction(_at(summary, STEP_INSTRUCTION_INDEX)),
+        distance_meters=_int(_at(summary, STEP_DISTANCE_INDEX, 0)),
+        distance_text=_str(_at(summary, STEP_DISTANCE_INDEX, 1)),
+        duration_seconds=_int(_at(summary, STEP_DURATION_INDEX, 0)),
+        duration_text=_str(_at(summary, STEP_DURATION_INDEX, 1)),
+    )
+    if isinstance(steps_raw, list) and steps_raw:
+        segment.steps = [_parse_step(step) for step in steps_raw]
+    else:
+        # A segment that is a single turn carries no step list: it is its own step.
+        segment.steps = [_parse_step([summary])]
+    return segment
+
+
+def _parse_path(raw_geometry: Any) -> list[tuple[float, float]]:
+    lats = _at(raw_geometry, GEOMETRY_LATS_INDEX)
+    lngs = _at(raw_geometry, GEOMETRY_LNGS_INDEX)
+    if not isinstance(lats, list) or not isinstance(lngs, list) or len(lats) != len(lngs):
+        return []
+    path: list[tuple[float, float]] = []
+    lat = lng = 0
+    for d_lat, d_lng in zip(lats, lngs, strict=True):
+        if not isinstance(d_lat, int) or not isinstance(d_lng, int):
+            return []
+        lat += d_lat
+        lng += d_lng
+        path.append((lat / 1e7, lng / 1e7))
+    return path
+
+
+def encode_polyline(points: list[tuple[float, float]]) -> str:
+    """Google's encoded polyline format (precision 5), as the Routes API returns it."""
+    out: list[str] = []
+    prev_lat = prev_lng = 0
+    for lat, lng in points:
+        ilat, ilng = round(lat * 1e5), round(lng * 1e5)
+        for value in (ilat - prev_lat, ilng - prev_lng):
+            value = ~(value << 1) if value < 0 else value << 1
+            while value >= 0x20:
+                out.append(chr((0x20 | (value & 0x1F)) + 63))
+                value >>= 5
+            out.append(chr(value + 63))
+        prev_lat, prev_lng = ilat, ilng
+    return "".join(out)
 
 
 def _parse_waypoint(record: Any, query: str) -> DirectionsWaypoint:
@@ -315,6 +482,7 @@ def _parse_route(raw_route: Any) -> Route:
                 distance_text=_str(_at(leg, LEG_DISTANCE_INDEX, 1)),
                 duration_seconds=_int(_at(leg, LEG_DURATION_INDEX, 0)),
                 duration_text=_str(_at(leg, LEG_DURATION_INDEX, 1)),
+                segments=[_parse_segment(seg) for seg in (_at(raw_leg, LEG_SEGMENTS_INDEX) or [])],
             )
         )
     return route
@@ -341,6 +509,10 @@ def parse_directions_response(
     ]
     unresolved = [i for i, w in enumerate(waypoints) if not w.resolved]
     routes = [_parse_route(r) for r in routes_raw or []]
+    geometries = _at(raw, ROOT_INDEX, GEOMETRY_INDEX)
+    if isinstance(geometries, list):
+        for route, geometry in zip(routes, geometries, strict=False):
+            route.path = _parse_path(geometry)
     if unresolved:
         status = "NOT_FOUND"
     elif not routes:
