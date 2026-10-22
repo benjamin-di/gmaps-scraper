@@ -139,7 +139,7 @@ class TestParsedPlace:
     def test_field_count(self):
         """Verify the documented place schema remains intentional."""
         fields = ParsedPlace.__dataclass_fields__
-        assert len(fields) == 58, f"Expected 58 fields, got {len(fields)}"
+        assert len(fields) == 60, f"Expected 60 fields, got {len(fields)}"
         # Check key fields
         for f in [
             "name",
@@ -167,6 +167,8 @@ class TestParsedPlace:
             "longitude",
             "categories",
             "hours",
+            "opening_hours",
+            "hours_status",
             "popular_times",
             "timezone",
             "description",
