@@ -168,6 +168,9 @@ These change when Google updates their API. Last verified: 2026-07-01.
 |------|--------------|
 | `src/gmaps/client.py` | `GMapsClient` — main entry, 3 modes, `enrich()` method |
 | `src/gmaps/_search.py` | `SearchAPI` — search, place_details, grid_search, pagination |
+| `src/gmaps/_directions.py` | `DirectionsAPI` — travel time/distance via /maps/preview/directions |
+| `src/gmaps/rpc/directions.py` | Directions request builder and parser (indices documented at top) |
+| `src/gmaps/rpc/ids.py` | `ChIJ…` place ID <-> `0x…:0x…` feature ID |
 | `src/gmaps/rpc/parser.py` | `ParsedPlace` (60 fields), all extraction logic, `to_dict()` |
 | `src/gmaps/rpc/decoder.py` | Anti-XSSI stripping, JSON/HTML detection |
 | `src/gmaps/transport.py` | HTTP client, UA rotation, jitter, retries |

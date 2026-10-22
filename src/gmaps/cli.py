@@ -11,8 +11,10 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import logging
+import re
 from collections.abc import Coroutine, Sequence
 from pathlib import Path
 from typing import Any, TypeVar
@@ -443,6 +445,71 @@ def collect(
         click.echo(f"Manifest: {store.manifest_path}")
 
     _run_async(_collect())
+
+
+_COORDS = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$")
+
+
+def _stop(value: str) -> str | tuple[float, float]:
+    match = _COORDS.match(value)
+    return (float(match.group(1)), float(match.group(2))) if match else value
+
+
+def _local_time(value: str | None) -> datetime.datetime | None:
+    if value is None:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise click.BadParameter(f"expected YYYY-MM-DDTHH:MM, got {value!r}") from exc
+
+
+@main.command()
+@click.argument("stops", nargs=-1, required=True)
+@click.option(
+    "--mode",
+    type=click.Choice(["drive", "walk", "bicycle", "transit"]),
+    default="drive",
+    show_default=True,
+)
+@click.option("--depart", default=None, help="Local departure time, e.g. 2026-10-22T08:30.")
+@click.option("--arrive", default=None, help="Local arrival time, e.g. 2026-10-22T09:00.")
+@click.option("--output", "-o", default=None, help="Output JSON file path.")
+@click.pass_context
+def route(
+    ctx: click.Context,
+    stops: tuple[str, ...],
+    mode: str,
+    depart: str | None,
+    arrive: str | None,
+    output: str | None,
+) -> None:
+    """Travel time and distance through STOPS in order.
+
+    Each stop is text, a ChIJ… place ID, a 0x…:0x… feature ID, or "lat,lng".
+    """
+    if len(stops) < 2:
+        raise click.UsageError("give at least an origin and a destination")
+    if depart and arrive:
+        raise click.UsageError("use --depart or --arrive, not both")
+
+    async def _route() -> None:
+        client = _make_client(ctx)
+        async with client:
+            result = await client.directions.route(
+                [_stop(s) for s in stops],
+                mode=mode,
+                departure_time=_local_time(depart),
+                arrival_time=_local_time(arrive),
+            )
+            out = json.dumps(result.to_dict(), indent=2, ensure_ascii=output is None)
+            if output:
+                Path(output).write_text(out, encoding="utf-8")
+                click.echo(f"Saved to {output}")
+            else:
+                click.echo(out)
+
+    _run_async(_route())
 
 
 @main.command()

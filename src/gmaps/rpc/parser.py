@@ -537,6 +537,7 @@ def parse_place_details_response(raw_data: Any) -> ParsedPlace | None:
 
     # Contact
     place.phone = _safe_deep_str(place_data, *F_PHONE)
+    place.website = _safe_deep_str(place_data, *F_WEBSITE_PATH)
     if place.place_id:
         place.google_maps_url = f"https://www.google.com/maps/place/?q=place_id:{place.place_id}"
     # Plus code from [183]
