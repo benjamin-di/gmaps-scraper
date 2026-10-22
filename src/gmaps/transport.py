@@ -15,8 +15,10 @@ from typing import Any
 
 import httpx
 
+from ._hosts import refuse_other_hosts
 from .exceptions import (
     AuthError,
+    HostNotAllowedError,
     NetworkError,
     ParseError,
     RateLimitError,
@@ -133,6 +135,7 @@ class HTTPTransport:
                 follow_redirects=True,
                 http2=False,
                 cookies=self._cookie_jar,
+                event_hooks={"request": [refuse_other_hosts]},
                 **transport_kwargs,
             )
             # Randomize initial UA position
@@ -261,7 +264,7 @@ class HTTPTransport:
                 response.raise_for_status()
                 return _decode(response.text, response_type=response_type)
 
-            except (RateLimitError, AuthError, ParseError):
+            except (RateLimitError, AuthError, ParseError, HostNotAllowedError):
                 # Google answered: a block page, a sign-in wall or a body we cannot read.
                 # Retrying gets the same answer, and wrapping it as NetworkError would hide
                 # a format change behind "network trouble".
@@ -378,7 +381,7 @@ class HTTPTransport:
                 response.raise_for_status()
                 return _decode(response.text, response_type=response_type)
 
-            except (RateLimitError, AuthError, ParseError):
+            except (RateLimitError, AuthError, ParseError, HostNotAllowedError):
                 raise
 
             except httpx.TimeoutException as e:

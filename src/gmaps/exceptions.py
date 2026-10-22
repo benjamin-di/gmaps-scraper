@@ -41,6 +41,10 @@ class ParseError(GMapsError):
         self.raw_response = raw_response
 
 
+class HostNotAllowedError(GMapsError):
+    """A request (or a redirect) to a host other than Google's was refused."""
+
+
 class NetworkError(GMapsError):
     """Network/connection errors."""
 

@@ -1267,6 +1267,12 @@ class SearchAPI:
         )
 
 
+def _pb_text(value: str) -> str:
+    """A pb string value: ``*`` -> ``*2A`` and ``!`` -> ``*21`` (``!`` separates pb fields,
+    and URL-encoding alone comes back as ``!``), then URL-encoded."""
+    return quote(str(value).replace("*", "*2A").replace("!", "*21"), safe="")
+
+
 def build_place_preview_path(
     place_id: str,
     hex_id: str,
@@ -1283,8 +1289,8 @@ def build_place_preview_path(
     ``hex_id`` and ``place_id`` are enough: live 2026-10-21 the endpoint
     answered fully with empty ftid/data_id/name and zero coordinates.
     """
-    hex_enc = quote(hex_id, safe="")
-    ftid_enc = quote(ftid, safe="")
+    hex_enc = _pb_text(hex_id)
+    ftid_enc = _pb_text(ftid)
     lat = latitude or 0.0
     lng = longitude or 0.0
     viewport = 898976.2597
@@ -1296,13 +1302,13 @@ def build_place_preview_path(
         f"!2m3!1f0.0!2f0.0!3f0.0"
         f"!3m2!1i1024!2i768!4f13.1"
         f"!4m2!3d{lat}!4d{lng}"
-        f"!15m4!1m3!1s{hex_enc}!4s{ftid_enc}!5s{place_id}!6s{quote(query or name, safe='')}"
+        f"!15m4!1m3!1s{hex_enc}!4s{ftid_enc}!5s{_pb_text(place_id)}!6s{_pb_text(query or name)}"
         f"!12m4!2m3!1i360!2i120!4i8"
         f"!13m57!2m2!1i203!2i100!3m2!2i4!5b1"
         f"!6m6!1m2!1i86!2i86!1m2!1i408!2i240"
         f"!7m33!1m3!1e1!2b0!3e3!1m3!1e2!2b1!3e2!1m3!1e2!2b0!3e3!1m3!1e8!2b0!3e3!1m3!1e10!2b0!3e3!1m3!1e10!2b1!3e2!1m3!1e10!2b0!3e4!1m3!1e9!2b1!3e2!2b1!9b0"
         f"!15m8!1m7!1m2!1m1!1e2!2m2!1i195!2i195!3i20"
-        f"!14m2!1s{data_id}!7e81"
+        f"!14m2!1s{_pb_text(data_id)}!7e81"
         f"!15m111!1m29!4e2!13m9!2b1!3b1!4b1!6i1!8b1!9b1!14b1!20b1!25b1"
         f"!18m17!3b1!4b1!5b1!6b1!9b1!13b1!14b1!17b1!20b1!21b1!22b1!30b1!32b1!33m1!1b1!34b1!36e2"
         f"!10m1!8e3!11m1!3e1!17b1!20m2!1e3!1e6!24b1!25b1!26b1!27b1!29b1!30m1!2b1!36b1!37b1"
@@ -1312,7 +1318,7 @@ def build_place_preview_path(
         f"!6m1!1e1!9b1!89b1!90m2!1m1!1e2!98m3!1b1!2b1!3b1!103b1!113b1!114m3!1b1!2m1!1b1!117b1!122m1!1b1!126b1!127b1!128m1!1b0"
         f"!21m0!22m2!1e81!8e4!29m0!30m6!3b1!6m1!2b1!7m1!2b1!9b1"
         f"!34m5!7b1!10b1!14b1!15m1!1b0!37i785"
-        f"!39s{quote(name, safe='')}!40b1!41b1"
+        f"!39s{_pb_text(name)}!40b1!41b1"
     )
     return f"/maps/preview/place?authuser=0&hl={language}&gl=us&pb={pb}&q={quote(name, safe='')}"
 
@@ -1343,8 +1349,8 @@ def _build_search_url(
     - !7i{count}!8i{offset}: Pagination (20 per page, offset in 20s).
     Geographic enforcement remains client-side (resolved boundary / bbox).
     """
-    enc = quote(query, safe="")
-    q_param = enc.replace("%20", "+")
+    enc = _pb_text(query)
+    q_param = quote(query, safe="").replace("%20", "+")
     # Prefer an explicit viewport. If the caller left the historical 10 km
     # default, derive viewport from UI zoom so "zoom=16/18" behaves like Maps.
     effective_viewport = float(viewport_dist)

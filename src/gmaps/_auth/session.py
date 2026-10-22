@@ -20,6 +20,8 @@ from typing import Any
 
 import httpx
 
+from .._hosts import refuse_other_hosts
+
 logger = logging.getLogger(__name__)
 
 # Cookie names required for Google Maps requests
@@ -86,6 +88,7 @@ class CookieSession:
                 timeout=httpx.Timeout(self._timeout),
                 follow_redirects=True,
                 http2=False,
+                event_hooks={"request": [refuse_other_hosts]},
             )
 
     async def ensure_session(self) -> None:
@@ -215,17 +218,21 @@ class CookieSession:
             return
         import json
         import os
+        import tempfile
 
-        os.makedirs(os.path.dirname(self._cookie_file) or ".", exist_ok=True)
-        with open(self._cookie_file, "w") as f:
-            json.dump(
-                {
-                    "cookies": self._cookies,
-                    "saved_at": time.time(),
-                },
-                f,
-                indent=2,
-            )
+        directory = os.path.dirname(self._cookie_file) or "."
+        os.makedirs(directory, exist_ok=True)
+        # Written privately (mkstemp creates the file 0600) and swapped in atomically, so a
+        # reader never sees half a file and a planted symlink is replaced, not followed.
+        fd, tmp = tempfile.mkstemp(prefix=".cookies-", suffix=".tmp", dir=directory)
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump({"cookies": self._cookies, "saved_at": time.time()}, f, indent=2)
+            os.replace(tmp, self._cookie_file)
+        except BaseException:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+            raise
         logger.debug("Cookies saved to %s", self._cookie_file)
 
     def _load_from_file(self) -> None:
@@ -240,23 +247,33 @@ class CookieSession:
         try:
             with open(self._cookie_file) as f:
                 data = json.load(f)
-                saved_cookies = data.get("cookies", {})
-                saved_at = data.get("saved_at", 0)
-
-                # Cookies expire after ~6 hours, refresh if older
-                if time.time() - saved_at < 6 * 3600:
-                    self._cookies.update(saved_cookies)
-                    logger.debug(
-                        "Loaded %d cookies from file (age: %.0fm)",
-                        len(saved_cookies),
-                        (time.time() - saved_at) / 60,
-                    )
-                else:
-                    logger.debug(
-                        "Cookie file too old (%.0fh), will refresh", (time.time() - saved_at) / 3600
-                    )
-        except (json.JSONDecodeError, KeyError) as e:
-            logger.warning("Failed to load cookies: %s", e)
+        except (OSError, json.JSONDecodeError) as e:
+            logger.warning("Failed to load cookies: %s", type(e).__name__)
+            return
+        if not isinstance(data, dict) or not isinstance(data.get("cookies"), dict):
+            logger.warning("Ignoring a cookie file without a cookies object")
+            return
+        # Only the consent cookies this session fetches itself: anything else in the file
+        # (an account's sign-in cookies, say) is never sent to Google.
+        saved_cookies = {
+            name: value
+            for name, value in data["cookies"].items()
+            if name in REQUIRED_COOKIES and isinstance(value, str)
+        }
+        saved_at = data.get("saved_at")
+        saved_at = saved_at if isinstance(saved_at, (int, float)) else 0
+        # Cookies expire after ~6 hours, refresh if older
+        if time.time() - saved_at < 6 * 3600:
+            self._cookies.update(saved_cookies)
+            logger.debug(
+                "Loaded %d cookies from file (age: %.0fm)",
+                len(saved_cookies),
+                (time.time() - saved_at) / 60,
+            )
+        else:
+            logger.debug(
+                "Cookie file too old (%.0fh), will refresh", (time.time() - saved_at) / 3600
+            )
 
 
 def _generate_socs_cookie() -> str:
