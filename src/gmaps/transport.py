@@ -16,7 +16,9 @@ from typing import Any
 import httpx
 
 from .exceptions import (
+    AuthError,
     NetworkError,
+    ParseError,
     RateLimitError,
     TimeoutError,
 )
@@ -259,7 +261,10 @@ class HTTPTransport:
                 response.raise_for_status()
                 return _decode(response.text, response_type=response_type)
 
-            except RateLimitError:
+            except (RateLimitError, AuthError, ParseError):
+                # Google answered: a block page, a sign-in wall or a body we cannot read.
+                # Retrying gets the same answer, and wrapping it as NetworkError would hide
+                # a format change behind "network trouble".
                 raise
 
             except httpx.TimeoutException as e:
@@ -373,7 +378,7 @@ class HTTPTransport:
                 response.raise_for_status()
                 return _decode(response.text, response_type=response_type)
 
-            except RateLimitError:
+            except (RateLimitError, AuthError, ParseError):
                 raise
 
             except httpx.TimeoutException as e:
