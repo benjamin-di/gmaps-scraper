@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import re
 from typing import Any, cast
+from urllib.parse import quote
 
 # Type aliases
 PbValue = str | int | float | bool | list | dict | None
@@ -66,6 +67,16 @@ def encode_pb(message: PbMessage) -> str:
         if encoded is not None:
             parts.append(encoded)
     return "".join(parts)
+
+
+def encode_pb_string(value: str) -> str:
+    """Escape and URL-encode a string value for a hand-built ``pb=`` parameter.
+
+    ``!`` separates pb fields, and Google decodes ``%21`` back to ``!``, so
+    URL-encoding alone lets a ``!`` in the text split the value. Like the Maps
+    web app, write ``*`` as ``*2A`` and ``!`` as ``*21`` first.
+    """
+    return quote(str(value).replace("*", "*2A").replace("!", "*21"), safe="")
 
 
 def _encode_field(field_num: int, type_code: str, value: PbValue) -> str | None:
