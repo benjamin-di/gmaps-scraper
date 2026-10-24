@@ -505,6 +505,7 @@ class TestParsePlaceDetails:
         pd[1] = "0ahUKEwi_token"
         pd[2] = ["123 Main St", "Austin, TX 78701"]
         pd[4] = [None, None, None, [None, "92 reviews"], None, None, None, 4.9]
+        pd[7] = ["https://detail-test-shop.example.com/", "detail-test-shop.example.com"]
         pd[9] = [None, None, 30.265, -97.732]
         pd[10] = "0x8644b5:0xf76b50"
         pd[11] = "Detail Test Shop"
@@ -539,6 +540,7 @@ class TestParsePlaceDetails:
         assert p.latitude == 30.265
         assert p.longitude == -97.732
         assert p.phone == "(512) 999-8888"
+        assert p.website == "https://detail-test-shop.example.com/"
 
     def test_parse_hours(self):
         raw = self._make_details_response()
