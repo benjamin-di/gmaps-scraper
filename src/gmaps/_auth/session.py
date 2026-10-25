@@ -242,9 +242,9 @@ class CookieSession:
         if not os.path.exists(self._cookie_file):
             return
         try:
-            with open(self._cookie_file) as f:
+            with open(self._cookie_file, encoding="utf-8") as f:
                 data = json.load(f)
-        except (OSError, json.JSONDecodeError) as e:
+        except (OSError, UnicodeError, json.JSONDecodeError) as e:
             logger.warning("Failed to load cookies: %s", type(e).__name__)
             return
         if not isinstance(data, dict) or not isinstance(data.get("cookies"), dict):
