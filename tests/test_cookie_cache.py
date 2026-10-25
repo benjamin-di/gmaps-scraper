@@ -4,10 +4,12 @@ import json
 import os
 import time
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
 from gmaps._auth.session import CookieSession
+from gmaps.client import GMapsClient
 
 CONSENT = {"NID": "synthetic-nid", "AEC": "synthetic-aec", "SOCS": "synthetic-socs"}
 
@@ -129,3 +131,42 @@ def test_unreadable_cache_does_not_log_file_contents(tmp_path, caplog):
     session._load_from_file()
     assert not session.cookies
     assert "synthetic-sensitive" not in caplog.text
+
+
+def test_invalid_utf8_cache_is_ignored_without_logging_contents(tmp_path, caplog):
+    path = tmp_path / "cookies.json"
+    path.write_bytes(b'{"cookies": "synthetic-sensitive\xff"}')
+    session = CookieSession(cookie_file=str(path))
+    session._load_from_file()
+    assert not session.cookies
+    assert "synthetic-sensitive" not in caplog.text
+
+
+async def test_explicit_login_cookies_reach_transport_without_entering_consent_cache(
+    tmp_path, monkeypatch, httpx_mock
+):
+    monkeypatch.setattr("gmaps._auth.session.asyncio.sleep", AsyncMock())
+    path = tmp_path / "cookies.json"
+    for _ in range(4):
+        httpx_mock.add_response(
+            json={},
+            headers=[("Set-Cookie", "NID=synthetic-nid"), ("Set-Cookie", "AEC=synthetic-aec")],
+        )
+    httpx_mock.add_response(json={})
+    async with GMapsClient(
+        cookie_file=str(path),
+        login_cookies="SID=explicit-synthetic; HSID=explicit-synthetic",
+        min_delay=0,
+    ) as client:
+        assert await client._transport.get("/maps/probe", response_type="json") == {}
+        assert "SID" not in client._cookie_session.cookies
+        assert "HSID" not in client._cookie_session.cookies
+
+    requests = httpx_mock.get_requests()
+    assert len(requests) == 5
+    assert all("explicit-synthetic" not in r.headers.get("cookie", "") for r in requests[:4])
+    assert "SID=explicit-synthetic" in requests[-1].headers["cookie"]
+    assert "HSID=explicit-synthetic" in requests[-1].headers["cookie"]
+    cached = json.loads(path.read_text())["cookies"]
+    assert set(cached) == {"NID", "AEC", "SOCS"}
+    assert "explicit-synthetic" not in path.read_text()
