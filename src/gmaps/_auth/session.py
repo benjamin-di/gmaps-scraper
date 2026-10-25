@@ -231,17 +231,21 @@ class CookieSession:
             return
         import json
         import os
+        import tempfile
 
-        os.makedirs(os.path.dirname(self._cookie_file) or ".", exist_ok=True)
-        with open(self._cookie_file, "w") as f:
-            json.dump(
-                {
-                    "cookies": self._cookies,
-                    "saved_at": time.time(),
-                },
-                f,
-                indent=2,
-            )
+        directory = os.path.dirname(self._cookie_file) or "."
+        os.makedirs(directory, exist_ok=True)
+        # mkstemp is private (0600), and replace avoids following an existing
+        # symlink or exposing a partial JSON file to another reader.
+        fd, temporary = tempfile.mkstemp(prefix=".cookies-", suffix=".tmp", dir=directory)
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump({"cookies": self._cookies, "saved_at": time.time()}, f, indent=2)
+            os.replace(temporary, self._cookie_file)
+        except BaseException:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+            raise
         logger.debug("Cookies saved to %s", self._cookie_file)
 
     def _load_from_file(self) -> None:
@@ -256,23 +260,33 @@ class CookieSession:
         try:
             with open(self._cookie_file) as f:
                 data = json.load(f)
-                saved_cookies = data.get("cookies", {})
-                saved_at = data.get("saved_at", 0)
-
-                # Cookies expire after ~6 hours, refresh if older
-                if time.time() - saved_at < 6 * 3600:
-                    self._cookies.update(saved_cookies)
-                    logger.debug(
-                        "Loaded %d cookies from file (age: %.0fm)",
-                        len(saved_cookies),
-                        (time.time() - saved_at) / 60,
-                    )
-                else:
-                    logger.debug(
-                        "Cookie file too old (%.0fh), will refresh", (time.time() - saved_at) / 3600
-                    )
-        except (json.JSONDecodeError, KeyError) as e:
-            logger.warning("Failed to load cookies: %s", e)
+        except (OSError, json.JSONDecodeError) as e:
+            logger.warning("Failed to load cookies: %s", type(e).__name__)
+            return
+        if not isinstance(data, dict) or not isinstance(data.get("cookies"), dict):
+            logger.warning("Ignoring a cookie file without a cookies object")
+            return
+        # Login cookies have their own explicit GMapsClient input; a saved
+        # consent cache must not enable an account session.
+        saved_cookies = {
+            name: value
+            for name, value in data["cookies"].items()
+            if name in REQUIRED_COOKIES and isinstance(value, str)
+        }
+        saved_at = data.get("saved_at")
+        saved_at = saved_at if isinstance(saved_at, (int, float)) else 0
+        # Cookies expire after ~6 hours, refresh if older.
+        if time.time() - saved_at < 6 * 3600:
+            self._cookies.update(saved_cookies)
+            logger.debug(
+                "Loaded %d cookies from file (age: %.0fm)",
+                len(saved_cookies),
+                (time.time() - saved_at) / 60,
+            )
+        else:
+            logger.debug(
+                "Cookie file too old (%.0fh), will refresh", (time.time() - saved_at) / 3600
+            )
 
 
 def _generate_socs_cookie() -> str:
