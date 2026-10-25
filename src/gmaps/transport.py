@@ -15,11 +15,13 @@ from typing import Any
 
 import httpx
 
+from ._hooks import RequestHook, _request_hooks
 from .exceptions import (
     AuthError,
     NetworkError,
     ParseError,
     RateLimitError,
+    RequestHookError,
     TimeoutError,
 )
 from .rpc.decoder import decode_response as _decode
@@ -93,6 +95,7 @@ class HTTPTransport:
         extra_headers: dict[str, str] | None = None,
         proxy: str | None = None,
         cookie_jar: httpx.Cookies | None = None,
+        request_hook: RequestHook | None = None,
     ):
         self.base_url = base_url
         self.timeout = timeout
@@ -104,6 +107,7 @@ class HTTPTransport:
 
         self._base_headers = {**BASE_HEADERS, **(extra_headers or {})}
         self._cookie_jar = cookie_jar
+        self._request_hook = request_hook
         self._client: httpx.AsyncClient | None = None
         self._request_count: int = 0
         self._last_request_time: float = 0.0
@@ -133,6 +137,7 @@ class HTTPTransport:
                 follow_redirects=True,
                 http2=False,
                 cookies=self._cookie_jar,
+                event_hooks={"request": _request_hooks(self._request_hook)},
                 **transport_kwargs,
             )
             # Randomize initial UA position
@@ -263,7 +268,7 @@ class HTTPTransport:
                 response.raise_for_status()
                 return _decode(response.text, response_type=response_type)
 
-            except (RateLimitError, AuthError, ParseError):
+            except (RateLimitError, AuthError, ParseError, RequestHookError):
                 # Google answered: a block page, a sign-in wall or a body we cannot read.
                 # Retrying gets the same answer, and wrapping it as NetworkError would hide
                 # a format change behind "network trouble".
@@ -380,7 +385,7 @@ class HTTPTransport:
                 response.raise_for_status()
                 return _decode(response.text, response_type=response_type)
 
-            except (RateLimitError, AuthError, ParseError):
+            except (RateLimitError, AuthError, ParseError, RequestHookError):
                 raise
 
             except httpx.TimeoutException as e:
