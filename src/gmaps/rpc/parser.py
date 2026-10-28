@@ -955,10 +955,14 @@ def _iso_date(value: Any) -> str | None:
         return None
 
 
-def _parse_periods(blocks: list[Any]) -> tuple[list[str], list[dict[str, Any]]]:
-    """A day's time blocks -> (texts as Maps shows them, periods)."""
+def _parse_periods(blocks: list[Any]) -> tuple[list[str], list[dict[str, Any]] | None]:
+    """A day's time blocks -> (texts as Maps shows them, periods).
+
+    Periods are None when a block has no readable open/close times.
+    """
     texts: list[str] = []
     periods: list[dict[str, Any]] = []
+    unreadable = False
     for block in blocks:
         if not isinstance(block, list) or not block:
             continue
@@ -966,6 +970,7 @@ def _parse_periods(blocks: list[Any]) -> tuple[list[str], list[dict[str, Any]]]:
             texts.append(block[HOURS_TIME_VALUE_INDEX])
         times = _safe_list(block, HOURS_BLOCK_TIMES_INDEX)
         if not times or len(times) <= HOURS_BLOCK_CLOSE_INDEX:
+            unreadable = True
             continue
         opens, closes = times[HOURS_BLOCK_OPEN_INDEX], times[HOURS_BLOCK_CLOSE_INDEX]
         if opens == [] and closes == []:
@@ -973,12 +978,13 @@ def _parse_periods(blocks: list[Any]) -> tuple[list[str], list[dict[str, Any]]]:
             continue
         start, end = _hhmm(opens), _hhmm(closes)
         if start is None or end is None or start == "24:00":
+            unreadable = True
             continue
         period: dict[str, Any] = {"open": start, "close": end}
         if end != "24:00" and end <= start:
             period["closes_next_day"] = True
         periods.append(period)
-    return texts, periods
+    return texts, None if unreadable else periods
 
 
 def _parse_opening_hours(hours_block: Any) -> list[dict[str, Any]]:
@@ -993,9 +999,11 @@ def _parse_opening_hours(hours_block: Any) -> list[dict[str, Any]]:
     ``periods`` lists ``{"open": "HH:MM", "close": "HH:MM"}``: "close" is
     "24:00" when the place closes at midnight, "closes_next_day" is True when it
     closes after midnight (e.g. 16:00-01:00), and open 24 hours is one
-    00:00-24:00 period. A closed day has no periods. "special" is the holiday
-    Google attaches to the date; "confirmed" is False when Maps says it "might
-    affect these hours". Unparseable entries are skipped rather than guessed.
+    00:00-24:00 period. A day Maps flags as closed has "closed": True and no
+    periods. "special" is the holiday Google attaches to the date; "confirmed"
+    is False when Maps says it "might affect these hours". Unparseable entries
+    are skipped rather than guessed, including an open day whose times cannot
+    all be read, so a day without periods is never mistaken for a closed one.
     """
     days_raw = _safe_list(hours_block, HOURS_DAYS_INDEX)
     if not days_raw:
@@ -1009,8 +1017,11 @@ def _parse_opening_hours(hours_block: Any) -> list[dict[str, Any]]:
             continue
         blocks = _safe_list(entry, HOURS_TIME_BLOCKS_INDEX) or []
         texts, periods = _parse_periods(blocks)
-        if _safe_int(entry, HOURS_OPEN_FLAG_INDEX) == HOURS_CLOSED_FLAG:
+        closed = _safe_int(entry, HOURS_OPEN_FLAG_INDEX) == HOURS_CLOSED_FLAG
+        if closed:
             periods = []
+        elif not periods:
+            continue
         day: dict[str, Any] = {"date": date}
         weekday = _safe_str(entry, HOURS_DAY_NAME_INDEX)
         if weekday:
@@ -1019,6 +1030,8 @@ def _parse_opening_hours(hours_block: Any) -> list[dict[str, Any]]:
             day["text"] = texts
         if periods:
             day["periods"] = periods
+        if closed:
+            day["closed"] = True
         special = _safe_list(entry, HOURS_SPECIAL_INDEX)
         if special:
             holiday: dict[str, Any] = {}

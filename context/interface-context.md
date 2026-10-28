@@ -151,6 +151,7 @@ Empty values are omitted. `is_ad` only appears when `true`.
 
 `close` is `"24:00"` for midnight, a period that ends after midnight has
 `"closes_next_day": true`, open 24 hours is one `00:00`–`24:00` period, and a
-closed day has no `periods`. `special` is the holiday Google attaches to that
+closed day has `"closed": true` and no `periods`. A day whose times cannot be
+read is left out rather than shown as closed. `special` is the holiday Google attaches to that
 date; `confirmed` is `false` when Maps only says it "might affect these hours".
 `business.status` is the status line Maps shows, e.g. "Open · Closes 5:30 PM".

@@ -364,6 +364,7 @@ class TestExtractHours:
                 "date": "2026-07-05",
                 "weekday": "Sunday",
                 "text": ["Closed"],
+                "closed": True,
                 "special": {"name": "Public Holiday", "confirmed": True},
             },
             {
@@ -393,6 +394,30 @@ class TestExtractHours:
         ]
         _extract_hours_new(pd, place)
         assert place.opening_hours == []
+
+    def test_open_day_with_unreadable_times_is_skipped_not_closed(self):
+        place = ParsedPlace()
+        pd = [None] * 250
+        pd[203] = [
+            [
+                ["Monday", 1, [2026, 7, 6], [["9 AM–5 PM", [["9"], [17]]]], None, 1],
+                ["Tuesday", 2, [2026, 7, 7], [["9 AM–5 PM"]], None, 1],
+                [
+                    "Wednesday",
+                    3,
+                    [2026, 7, 8],
+                    [["9 AM–12 PM", [[9], [12]]], ["1–5 PM", [[13], None]]],
+                    None,
+                    1,
+                ],
+                ["Thursday", 4, [2026, 7, 9], [["Closed"]], None, 2],
+            ]
+        ]
+        _extract_hours_new(pd, place)
+        assert place.opening_hours == [
+            {"date": "2026-07-09", "weekday": "Thursday", "text": ["Closed"], "closed": True}
+        ]
+        assert place.hours["Monday"] == ["9 AM–5 PM"]
 
 
 class TestExtractCompleteAddress:
