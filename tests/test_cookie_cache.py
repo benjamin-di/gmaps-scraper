@@ -69,7 +69,16 @@ def test_failed_save_keeps_previous_cache_and_cleans_temporary_file(tmp_path, mo
     assert list(tmp_path.iterdir()) == [path]
 
 
-def test_only_consent_cookies_are_loaded_from_cache(tmp_path):
+def test_only_consent_cookies_are_saved(tmp_path):
+    path = tmp_path / "cookies.json"
+    session = CookieSession(cookie_file=str(path))
+    session.cookies.update({**CONSENT, "SID": "synthetic-login", "OTHER": "synthetic-other"})
+    session._save_to_file()
+    assert json.loads(path.read_text())["cookies"] == CONSENT
+    assert "synthetic-login" not in path.read_text()
+
+
+def test_only_consent_cookies_are_loaded_from_cache(tmp_path, caplog):
     path = tmp_path / "cookies.json"
     path.write_text(
         json.dumps(
@@ -82,6 +91,10 @@ def test_only_consent_cookies_are_loaded_from_cache(tmp_path):
     session = CookieSession(cookie_file=str(path))
     session._load_from_file()
     assert session.cookies == CONSENT
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert "Ignoring 2 non-consent cookie(s)" in warnings[0].getMessage()
+    assert "synthetic-login" not in caplog.text
 
 
 @pytest.mark.parametrize(
