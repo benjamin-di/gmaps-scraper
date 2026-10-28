@@ -10,6 +10,7 @@ import pytest
 from gmaps._search import GridCellProgress, SearchAPI, SearchResult, _build_search_url
 from gmaps.grid import BoundingBox, generate_cells
 from gmaps.rpc.parser import ParsedPlace
+from gmaps.rpc.pb_encoder import build_autocomplete_pb, build_search_pb
 from gmaps.stats import ScraperStats
 
 
@@ -575,3 +576,8 @@ async def test_place_details_strings_cannot_add_pb_fields() -> None:
         assert injected not in pb, injected
     assert "!5sChIJ*21x!6sq*21w" in pb
     assert "!39sBar*21 *2ATwo!40b1" in pb
+
+
+def test_encoded_pb_strings_cannot_add_pb_fields() -> None:
+    assert build_search_pb("cafe!5i21 *", 1.5, 2.5).startswith("!1m5!2scafe*215i21 *2A!3d1.5")
+    assert build_autocomplete_pb("bar!4d9").startswith("!1m4!2sbar*214d9!3d0.0")

@@ -76,7 +76,12 @@ def encode_pb_string(value: str) -> str:
     URL-encoding alone lets a ``!`` in the text split the value. Like the Maps
     web app, write ``*`` as ``*2A`` and ``!`` as ``*21`` first.
     """
-    return quote(str(value).replace("*", "*2A").replace("!", "*21"), safe="")
+    return quote(_escape_pb_string(str(value)), safe="")
+
+
+def _escape_pb_string(value: str) -> str:
+    """Write ``*`` as ``*2A`` and ``!`` as ``*21``, as the Maps web app does."""
+    return value.replace("*", "*2A").replace("!", "*21")
 
 
 def _encode_field(field_num: int, type_code: str, value: PbValue) -> str | None:
@@ -95,7 +100,7 @@ def _encode_field(field_num: int, type_code: str, value: PbValue) -> str | None:
         s = str(value)
         if not s:
             return None
-        return f"!{field_num}s{s}"
+        return f"!{field_num}s{_escape_pb_string(s)}"
 
     if type_code in ("d", "double"):
         if isinstance(value, bool):
