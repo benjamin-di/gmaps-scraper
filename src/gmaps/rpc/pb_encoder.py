@@ -31,6 +31,7 @@ and SerpApi's research.
 from __future__ import annotations
 
 import re
+import warnings
 from typing import Any, cast
 from urllib.parse import quote
 
@@ -283,6 +284,33 @@ def build_place_details_path(
         f"!39s{encode_pb_string(name)}!40b1!41b1"
     )
     return f"/maps/preview/place?authuser=0&hl={language}&gl=us&pb={pb}&q={quote(name, safe='')}"
+
+
+def build_place_details_pb(place_id: str, language: str = "en") -> str:
+    """Build the old ``place_id:…`` pb= parameter for place details.
+
+    .. deprecated::
+        ``/maps/preview/place`` answers this request with HTTP 400. Use
+        :func:`build_place_details_path` with the place's feature ID
+        (:func:`gmaps.rpc.ids.place_id_to_hex_id`) instead.
+    """
+    warnings.warn(
+        "build_place_details_pb() builds a request Google Maps rejects; "
+        "use build_place_details_path() instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    message: PbMessage = [
+        (
+            1,
+            "m",
+            [
+                (2, "s", f"place_id:{place_id}"),
+                (3, "s", language),
+            ],
+        ),
+    ]
+    return encode_pb(message)
 
 
 def build_reviews_pb(

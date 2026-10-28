@@ -98,3 +98,11 @@ async def test_get_rejects_ids_it_cannot_convert() -> None:
         await api.get("GhIJQWDl0CIeQUARxks3icF8U8A")
     with pytest.raises(ValueError):
         await api.get_by_hex_id("not-a-hex-id")
+
+
+def test_build_place_details_pb_kept_as_deprecated_alias() -> None:
+    from gmaps.rpc import build_place_details_pb
+
+    with pytest.warns(DeprecationWarning, match="build_place_details_path"):
+        pb = build_place_details_pb("ChIJwVp-8psHbUcRuN43n5iK72Y", "de")
+    assert pb == "!1m2!2splace_id:ChIJwVp-8psHbUcRuN43n5iK72Y!3sde"

@@ -17,6 +17,7 @@ from .parser import (
 )
 from .pb_encoder import (
     build_place_details_path,
+    build_place_details_pb,
     build_reviews_pb,
     build_search_pb,
     decode_pb,
@@ -48,6 +49,7 @@ __all__ = [
     "decode_pb",
     "build_search_pb",
     "build_place_details_path",
+    "build_place_details_pb",
     "build_reviews_pb",
     "parse_search_response",
     "parse_place_details_response",
