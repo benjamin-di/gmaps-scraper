@@ -115,6 +115,7 @@ gmaps route "Vienna International Airport" "Stephansplatz, Vienna" --mode drive 
 ```
 
 Stops can be text, a `ChIJ…` place ID or `lat,lng`; add more stops to get each leg.
+Modes are `drive` (default) and `walk`; times are the stop's local time, without a UTC offset.
 Driving with `--depart`/`--arrive` includes predicted traffic and a typical range.
 Each route also lists its turns (`legs[].segments[].steps[]`: instruction, maneuver, distance, time, notices such as tolls); `to_dict(include_path=True)` adds the route's path.
 From Python: `await client.directions.route([...], mode="walk")`.

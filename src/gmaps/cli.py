@@ -460,16 +460,19 @@ def _local_time(value: str | None) -> datetime.datetime | None:
     if value is None:
         return None
     try:
-        return datetime.datetime.fromisoformat(value)
+        parsed = datetime.datetime.fromisoformat(value)
     except ValueError as exc:
         raise click.BadParameter(f"expected YYYY-MM-DDTHH:MM, got {value!r}") from exc
+    if parsed.tzinfo is not None:
+        raise click.BadParameter(f"give the stop's local time without a UTC offset, got {value!r}")
+    return parsed
 
 
 @main.command()
 @click.argument("stops", nargs=-1, required=True)
 @click.option(
     "--mode",
-    type=click.Choice(["drive", "walk", "bicycle", "transit"]),
+    type=click.Choice(["drive", "walk"]),
     default="drive",
     show_default=True,
 )
@@ -493,6 +496,8 @@ def route(
         raise click.UsageError("give at least an origin and a destination")
     if depart and arrive:
         raise click.UsageError("use --depart or --arrive, not both")
+    departure_time = _local_time(depart)
+    arrival_time = _local_time(arrive)
 
     async def _route() -> None:
         client = _make_client(ctx)
@@ -500,8 +505,8 @@ def route(
             result = await client.directions.route(
                 [_stop(s) for s in stops],
                 mode=mode,
-                departure_time=_local_time(depart),
-                arrival_time=_local_time(arrive),
+                departure_time=departure_time,
+                arrival_time=arrival_time,
             )
             out = json.dumps(result.to_dict(), indent=2, ensure_ascii=output is None)
             if output:

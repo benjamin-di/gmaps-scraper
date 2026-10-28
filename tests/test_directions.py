@@ -81,8 +81,15 @@ def test_departure_and_arrival_are_local_wall_clock_as_utc():
     assert depart.endswith(f"!6m7!14b1!20m2!1e0!2e3!19m2!2e2!3j{expected}")
     arrive = _pb(build_directions_path(["A", "B"], arrival_time=eight_thirty))
     assert arrive.endswith(f"!6m8!14b1!20m2!1e0!2e3!19m3!1e1!2e2!3j{expected}")
-    aware = eight_thirty.replace(tzinfo=dt.timezone(dt.timedelta(hours=2)))
-    assert _pb(build_directions_path(["A", "B"], departure_time=aware)) == depart
+
+
+@pytest.mark.parametrize("offset", [0, 2])
+def test_times_with_a_utc_offset_are_rejected(offset: int):
+    aware = dt.datetime(2026, 10, 22, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=offset)))
+    with pytest.raises(ValueError, match="UTC offset"):
+        build_directions_path(["A", "B"], departure_time=aware)
+    with pytest.raises(ValueError, match="UTC offset"):
+        build_directions_path(["A", "B"], arrival_time=aware)
 
 
 def test_request_validation():
@@ -90,6 +97,9 @@ def test_request_validation():
         build_directions_path(["only one"])
     with pytest.raises(ValueError):
         build_directions_path(["A", "B"], mode="teleport")
+    for unverified in ("bicycle", "transit"):
+        with pytest.raises(ValueError):
+            build_directions_path(["A", "B"], mode=unverified)
     with pytest.raises(ValueError):
         build_directions_path(
             ["A", "B"],

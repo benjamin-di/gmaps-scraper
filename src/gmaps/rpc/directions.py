@@ -11,7 +11,8 @@ Request (``pb``), one waypoint message per stop, then the options::
     !1m2!1s<text>!6e0                 waypoint by free text
     !1m3!1s<name>!2s<0x…:0x…>!6e0     waypoint by feature ID (name may be empty)
     !1m4!3m2!3d<lat>!4d<lng>!6e2      waypoint by coordinates
-    !6m<n>!20m2!1e<mode>!2e3          mode: 0 drive, 1 bicycle, 2 walk, 3 transit
+    !6m<n>!20m2!1e<mode>!2e3          mode: 0 drive, 2 walk (1 bicycle and 3 transit
+                                      are not offered until captures verify them)
           !14b1                       also send each route's geometry (j[0][7])
           !19m2!2e2!3j<t>             depart at t
           !19m3!1e1!2e2!3j<t>         arrive by t
@@ -54,12 +55,12 @@ import datetime as dt
 import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
-from urllib.parse import quote
 
 from ..exceptions import ParseError
 from .ids import hex_id_to_place_id
+from .pb_encoder import encode_pb_string
 
-TRAVEL_MODES = {"drive": 0, "bicycle": 1, "walk": 2, "transit": 3}
+TRAVEL_MODES = {"drive": 0, "walk": 2}
 
 # Response indices; Google can move these, keep them in one place.
 ROOT_INDEX = 0
@@ -107,11 +108,6 @@ LEG_DURATION_INDEX = 3
 Waypoint = str | tuple[float, float]
 
 
-def _pb_string(value: str) -> str:
-    """Escape a pb string value: ``*`` -> ``*2A``, ``!`` -> ``*21``, then URL-encode."""
-    return quote(value.replace("*", "*2A").replace("!", "*21"), safe="")
-
-
 def _is_hex_id(value: str) -> bool:
     return hex_id_to_place_id(value) is not None
 
@@ -131,14 +127,18 @@ def encode_waypoint(waypoint: Waypoint) -> str:
     text = waypoint.strip()
     hex_id = text.lower() if _is_hex_id(text) else place_id_to_hex_id(text)
     if hex_id:
-        return f"!1m3!1s!2s{_pb_string(hex_id)}!6e0"
-    return f"!1m2!1s{_pb_string(text)}!6e0"
+        return f"!1m3!1s!2s{encode_pb_string(hex_id)}!6e0"
+    return f"!1m2!1s{encode_pb_string(text)}!6e0"
 
 
 def _wall_clock(value: dt.datetime) -> int:
-    """Local wall-clock time written as if UTC; aware datetimes use their own
-    wall clock (the offset is dropped, as Maps expects the stop's local time)."""
-    return calendar.timegm(value.replace(tzinfo=None).timetuple())
+    """Local wall-clock time written as if UTC. Maps reads it in the stop's own
+    time zone, so a datetime with a UTC offset is rejected rather than guessed."""
+    if value.tzinfo is not None and value.utcoffset() is not None:
+        raise ValueError(
+            f"give the stop's local time as a naive datetime, not one with a UTC offset: {value!r}"
+        )
+    return calendar.timegm(value.timetuple())
 
 
 def build_directions_path(

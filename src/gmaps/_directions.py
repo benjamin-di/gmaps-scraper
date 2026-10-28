@@ -50,10 +50,11 @@ class DirectionsAPI:
                 Vienna"), a ``ChIJ…`` place ID, a ``0x…:0x…`` feature ID,
                 or a ``(latitude, longitude)`` tuple. Free text is geocoded by
                 Google; pass IDs or coordinates when the stop must be exact.
-            mode: "drive", "walk", "bicycle" or "transit".
+            mode: "drive" or "walk".
             departure_time / arrival_time: Local wall-clock time at the stop
-                (naive datetime). Driving then returns traffic predicted for
-                that time. At most one of the two.
+                (naive datetime; one with a UTC offset raises ValueError).
+                Driving then returns traffic predicted for that time. At most
+                one of the two.
 
         Returns:
             Directions with status OK, NOT_FOUND (a stop could not be

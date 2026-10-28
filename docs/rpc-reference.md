@@ -140,7 +140,7 @@ re-verified 2026-10-21): one waypoint per stop, then the options.
 | `!1m2!1s{text}!6e0` | waypoint by free text |
 | `!1m3!1s{name}!2s{0x…:0x…}!6e0` | waypoint by feature ID (name may be empty; a `ChIJ…` place ID converts to it, `rpc/ids.py`) |
 | `!1m4!3m2!3d{lat}!4d{lng}!6e2` | waypoint by coordinates |
-| `!6m{n}!20m2!1e{mode}!2e3` | mode 0 drive, 1 bicycle, 2 walk, 3 transit; `!2e3` is required |
+| `!6m{n}!20m2!1e{mode}!2e3` | mode 0 drive, 2 walk (1 bicycle and 3 transit are not offered until captures verify them); `!2e3` is required |
 | `!19m2!2e2!3j{t}` / `!19m3!1e1!2e2!3j{t}` | depart at / arrive by `t` (inside `6m`) |
 | `!14b1` | also return each route's geometry (inside `6m`; about 7 KB per 20 km) |
 
