@@ -543,6 +543,23 @@ class TestParseSearchResponse:
         assert p.timezone == "America/Chicago"
         assert p.neighborhood == "Downtown"
 
+    def test_parse_links(self):
+        raw = self._make_search_response()
+        pd = raw[0][1][1][14]
+        pd[46] = [["https://booking.example/r/1?src=ggl", "booking.example", None, None, "token"]]
+        pd[38] = ["https://menu.example/", "menu.example"]
+        pd[75] = [["https://order.example/1", "order.example"]]
+        p = parse_search_response(raw)[0]
+        assert p.reservations == [
+            {"link": "https://booking.example/r/1?src=ggl", "source": "booking.example"}
+        ]
+        assert p.menu == {"link": "https://menu.example/", "source": "menu.example"}
+        assert p.order_online == [{"link": "https://order.example/1", "source": "order.example"}]
+
+    def test_parse_without_links(self):
+        p = parse_search_response(self._make_search_response())[0]
+        assert p.reservations == [] and p.menu == {} and p.order_online == []
+
     def test_parse_empty_response(self):
         assert parse_search_response(None) == []
         assert parse_search_response([]) == []
@@ -670,6 +687,14 @@ class TestParsePlaceDetails:
         raw = self._make_details_response()
         p = parse_place_details_response(raw)
         assert p.owner["name"] == "Detail Test Shop (Owner)"
+
+    def test_parse_reservation_links(self):
+        raw = self._make_details_response()
+        raw[6][46] = [["https://booking.example/r/2", "booking.example"]]
+        p = parse_place_details_response(raw)
+        assert p.reservations == [
+            {"link": "https://booking.example/r/2", "source": "booking.example"}
+        ]
 
     def test_parse_returns_none_on_invalid(self):
         assert parse_place_details_response(None) is None
